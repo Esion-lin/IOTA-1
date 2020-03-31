@@ -67,18 +67,18 @@
             <artifactId>iri</artifactId>
             <version>1.0.0</version>
         </dependency> -->
-        <!-- <dependency>
+        <dependency>
             <groupId>org.ethereum</groupId>
             <artifactId>ethereumj</artifactId>
             <version>1.13.0</version>
             <scope>system</scope>  
             <systemPath>${project.basedir}/lib/ethereumj-core-1.13.0-SNAPSHOT-all.jar</systemPath>
-        </dependency> -->
-        <dependency>
+        </dependency>
+        <!--<dependency>
             <groupId>org.ethereum</groupId>
             <artifactId>ethereumj</artifactId>
             <version>1.0.0</version>
-        </dependency>
+        </dependency>-->
         <!-- https://mvnrepository.com/artifact/org.bouncycastle/bcprov-jdk15on -->
         <dependency>
             <groupId>org.bouncycastle</groupId>

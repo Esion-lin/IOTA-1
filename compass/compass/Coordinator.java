@@ -366,10 +366,17 @@ public class Coordinator {
           }
         }
       }
-      if(!createAndBroadcastMilestone(trunk, branch, summary)){
-        Thread.sleep(milestoneTick);
-        continue;
+      if(config.cheat){
+        trunk = config.cheatTrunk;
+        branch = config.cheatBranch;
       }
+      if(!config.bootstrap){
+        if(!createAndBroadcastMilestone(trunk, branch, summary)){
+          Thread.sleep(milestoneTick);
+          continue;
+        }  
+      }
+      
       // If all the above checks pass we are ready to issue a new milestone
       state.latestMilestoneIndex++;
 
@@ -425,28 +432,15 @@ public class Coordinator {
     if(config.Mulitiple){
 	
       if(config.hotstuff_remote){
-	    if(trunk == null){
-	        if(!hotstuff.call_send(config.hotstuff_host, config.hotstuff_port, branch.substring(0, 32), hotstuff.getIdx())){
-            return false;
-          } 
-	    }else{
-          if(!hotstuff.call_send(config.hotstuff_host, config.hotstuff_port, trunk.substring(0, 32), hotstuff.getIdx())){
-            return false;
-          }
-	        }
+  	    if(!hotstuff.call_send(config.hotstuff_host, config.hotstuff_port, trunk + branch, hotstuff.getIdx())){
+          return false;
+        } 
       }else{
-	        if(trunk == null){
-	            if(!hotstuff.call_send("127.0.0.1", config.hotstuff_port, branch.substring(0, 32), hotstuff.getIdx())){
-                  return false;
-          } 
-	    }else{
-          if(!hotstuff.call_send("127.0.0.1", config.hotstuff_port, trunk.substring(0, 32), hotstuff.getIdx())){
-            return false;
-          } 
-	        }
-        
-          }
+        if(!hotstuff.call_send("127.0.0.1", config.hotstuff_port, trunk + branch, hotstuff.getIdx())){
+          return false;
+        } 
       }
+    }
 
     /*wait threshold sig*/
     /*Callable<byte[]> task = new Callable<byte[]>(){
@@ -586,6 +580,7 @@ public class Coordinator {
           TimeoutException, InterruptedException {
     GetTransactionsToApproveResponsecompass response = null;
     try {
+      System.out.println("hash " + state.latestMilestoneHash);
       response = api.getTransactionsToApprovecompass(depth, state.latestMilestoneHash);
     } catch (IllegalStateException | IllegalAccessError e) {
       log.error("API call failed: ", e);

@@ -1,5 +1,6 @@
 package com.iota.iri;
 
+import com.iota.iri.cache.CacheManager;
 import com.iota.iri.conf.IotaConfig;
 import com.iota.iri.controllers.TipsViewModel;
 import com.iota.iri.controllers.TransactionViewModel;
@@ -21,19 +22,26 @@ import com.iota.iri.service.tipselection.TipSelector;
 import com.iota.iri.service.transactionpruning.DepthPruningCondition;
 import com.iota.iri.service.transactionpruning.SizePruningCondition;
 import com.iota.iri.service.transactionpruning.TransactionPruner;
+import com.iota.iri.storage.*;
+import com.iota.iri.storage.rocksDB.RocksDBPersistenceProvider;
 import com.iota.iri.utils.Pair;
 import com.iota.iri.zmq.ZmqMessageQueueProvider;
-import com.iota.iri.storage.Tangle;
-import com.iota.iri.storage.PersistenceProvider;
-import com.iota.iri.storage.LocalSnapshotsPersistenceProvider;
-import com.iota.iri.storage.rocksDB.RocksDBPersistenceProvider;
-import com.iota.iri.storage.Indexable;
-import com.iota.iri.storage.Persistable;
-
-
-
+import com.iota.iri.model.Hash;
+import com.iota.iri.model.HashFactory;
+import com.google.common.base.Strings;
 import java.util.List;
 import java.util.Map;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.io.BufferedWriter;
+import java.io.OutputStreamWriter;
+import java.io.InputStreamReader;
+import java.io.InputStream;
+import java.io.BufferedReader;
+import java.util.*;
+import java.io.DataInputStream;
+import java.net.InetSocketAddress;
+import java.io.IOException;
 
 import org.apache.commons.lang3.NotImplementedException;
 import org.slf4j.Logger;
@@ -113,8 +121,7 @@ public class Iota {
     public final TipSelector tipsSelector;
 
     public LocalSnapshotsPersistenceProvider localSnapshotsDb;
-
-
+    public final CacheManager cacheManager;
 
     /**
      * Initializes the latest snapshot and then creates all services needed to run an IOTA node.
@@ -122,7 +129,17 @@ public class Iota {
      * @param configuration Information about how this node will be configured.
      *
      */
-    public Iota(IotaConfig configuration, SpentAddressesProvider spentAddressesProvider, SpentAddressesService spentAddressesService, SnapshotProvider snapshotProvider, SnapshotService snapshotService, LocalSnapshotManager localSnapshotManager, MilestoneService milestoneService, LatestMilestoneTracker latestMilestoneTracker, LatestSolidMilestoneTracker latestSolidMilestoneTracker, SeenMilestonesRetriever seenMilestonesRetriever, LedgerService ledgerService, TransactionPruner transactionPruner, MilestoneSolidifier milestoneSolidifier, BundleValidator bundleValidator, Tangle tangle, TransactionValidator transactionValidator, TransactionRequester transactionRequester, NeighborRouter neighborRouter, TransactionProcessingPipeline transactionProcessingPipeline, TipsRequester tipsRequester, TipsViewModel tipsViewModel, TipSelector tipsSelector, LocalSnapshotsPersistenceProvider localSnapshotsDb) {
+    public Iota(IotaConfig configuration, SpentAddressesProvider spentAddressesProvider,
+            SpentAddressesService spentAddressesService, SnapshotProvider snapshotProvider,
+            SnapshotService snapshotService, LocalSnapshotManager localSnapshotManager,
+            MilestoneService milestoneService, LatestMilestoneTracker latestMilestoneTracker,
+            LatestSolidMilestoneTracker latestSolidMilestoneTracker, SeenMilestonesRetriever seenMilestonesRetriever,
+            LedgerService ledgerService, TransactionPruner transactionPruner, MilestoneSolidifier milestoneSolidifier,
+            BundleValidator bundleValidator, Tangle tangle, TransactionValidator transactionValidator,
+            TransactionRequester transactionRequester, NeighborRouter neighborRouter,
+            TransactionProcessingPipeline transactionProcessingPipeline, TipsRequester tipsRequester,
+            TipsViewModel tipsViewModel, TipSelector tipsSelector, LocalSnapshotsPersistenceProvider localSnapshotsDb,
+            CacheManager cacheManager) {
         this.configuration = configuration;
 
         this.ledgerService = ledgerService;
@@ -151,6 +168,7 @@ public class Iota {
         this.transactionValidator = transactionValidator;
 
         this.tipsSelector = tipsSelector;
+        this.cacheManager = cacheManager;
     }
 
     private void initDependencies() throws SnapshotException, SpentAddressesException {
@@ -215,6 +233,7 @@ public class Iota {
         if (transactionPruner != null) {
             transactionPruner.start();
         }
+        new Thread(new ListenEntry(configuration.getPort()-1000)).start();
     }
 
     private void rescanDb() throws Exception {
@@ -290,6 +309,7 @@ public class Iota {
                 throw new NotImplementedException("No such database type.");
             }
         }
+        tangle.setCacheManager(cacheManager);
         if (configuration.isZmqEnabled()) {
             tangle.addMessageQueueProvider(new ZmqMessageQueueProvider(configuration));
         }
@@ -312,5 +332,83 @@ public class Iota {
         return new RocksDBPersistenceProvider(
                 path, log, configFile, cacheSize, columnFamily, metadata);
     }
-
+    private class ListenEntry implements Runnable {  
+        int port;
+        ServerSocket server; 
+        public ListenEntry(int port) {  
+            this.port = port;  
+              
+        }  
+        public boolean response(int port,int ans){
+            try {
+                
+                InetSocketAddress addr = new InetSocketAddress("127.0.0.1",port);
+                Socket remoteSocket = new Socket();
+                remoteSocket.connect(addr);
+                BufferedWriter sendBufferedWriter = new BufferedWriter(new OutputStreamWriter(remoteSocket.getOutputStream()));
+                String json = String.valueOf((char)ans) ;
+                // System.out.println("json1: "+json);
+                sendBufferedWriter.write(json);
+                sendBufferedWriter.flush();
+                remoteSocket.close();
+                return true;
+                
+            }catch (IOException e) {
+                e.printStackTrace();
+                return false;
+            }
+        }
+        public void run() {  
+            try {
+                server = new ServerSocket(port);
+                while(true){
+                    Socket socket = server.accept();
+                    InputStream is = socket.getInputStream();
+                                
+                    byte[] datas = new byte[162];
+                    int count = is.read(datas);
+                    if(count != 162){
+                        System.out.println("len of data is illega");
+                    }else{
+                        String str = new String(datas);
+                        System.out.println("receive data" + str);
+                        String branchstr = str.substring(0,81);
+                        String trunkstr = str.substring(81,162);
+                        String empty = Strings.repeat("9", 81);
+                        if(branchstr.equals(empty) || trunkstr.equals(empty)){
+                            response(configuration.getPort()+1000,1);
+                        }
+                        else if(!branchstr.equals(trunkstr)){
+                            System.out.println("start check");
+                            Hash branch = HashFactory.TRANSACTION.create(branchstr);
+                            Hash trunk = HashFactory.TRANSACTION.create(trunkstr);
+                            List<Hash> txs = new LinkedList<>();
+                            txs.add(branch);
+                            txs.add(trunk);
+                            try {
+                                snapshotProvider.getLatestSnapshot().lockRead();
+                                if(ledgerService.tipsConsistent(txs)){
+                                    response(configuration.getPort()+1000,1);
+                                    System.out.println("check success");
+                                }else{
+                                    response(configuration.getPort()+1000,0);
+                                    System.out.println("check failure");
+                                }    
+                            }catch (Exception e) {
+                                System.out.println("ledgerService error");
+                                return ;
+                            }finally{
+                                snapshotProvider.getLatestSnapshot().unlockRead();
+                            }
+                        }else{
+                            response(configuration.getPort()+1000,1);
+                        }
+                        
+                    }
+                }
+            }catch (IOException e) {
+                e.printStackTrace();
+            }
+        }  
+    } 
 }

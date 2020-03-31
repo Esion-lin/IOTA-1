@@ -52,6 +52,15 @@ public class CoordinatorConfiguration extends BaseConfiguration {
   @Parameter(names = "-depth", description = "Starting depth")
   public int depth = 0;
 
+  @Parameter(names = "-cheat", description = "just for test.")
+  public boolean cheat = false;
+
+  @Parameter(names = "-cheatTrunk", description = "cheat with trunk,just for test.")
+  public String cheatTrunk = "";
+
+  @Parameter(names = "-cheatBranch", description = "cheat with branch, just for test.")
+  public String cheatBranch = "";
+
   @Parameter(names = "-depthScale", description = "Time scale factor for depth decrease")
   public float depthScale = 1.01f;
 
